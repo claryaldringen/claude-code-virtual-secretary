@@ -1,18 +1,14 @@
 {
-  "name": "personal-assistant",
+  "name": "virtual-secretary",
   "version": "1.0.0",
-  "description": "A personal assistant plugin that integrates Gmail and Google Calendar to help coordinate tasks, manage emails, and schedule meetings",
+  "description": "Virtual secretary: automated email triage, Fio bank payments, and Google Drive integration built on personal-assistant-plugin",
   "author": {
-    "name": "Ken Jenney",
-    "email": "me@kenjenney.com"
+    "name": "Martin",
+    "email": ""
   },
   "keywords": [
-    "gmail",
-    "calendar",
-    "assistant",
-    "productivity",
-    "scheduling",
-    "email"
+    "gmail", "calendar", "assistant", "productivity",
+    "secretary", "fio", "payments", "google-drive"
   ],
   "hooks": "./hooks/hooks.json",
   "mcpServers": "./.mcp.json"
