@@ -279,6 +279,57 @@ claude plugin uninstall personal-assistant
 claude plugin install personal-assistant@marketplace-name
 ```
 
+## Fio Bank API Setup
+
+### Generate API Tokens
+
+You need two tokens - one for your business account and one for your personal account.
+
+1. Log into [Fio Internetbanking](https://ib.fio.cz)
+2. Go to **Nastaveni** (top right) -> **API** tab
+3. Click **Pridat novy token**
+4. Set token type to **Sledovani uctu a zadavani platebnich prikazu** (monitor + create payment orders)
+5. Authorize the token creation via SMS/push notification
+6. Wait 5 minutes for the token to activate
+7. Copy the 64-character token string
+
+Repeat for the second account.
+
+### Important Notes
+
+- Each token is tied to one account. You need separate tokens for business and personal accounts.
+- Tokens expire after 180 days but auto-renew when you log into internetbanking.
+- Minimum 30 seconds between API calls on the same token.
+- **Payments submitted via API must be confirmed via SMS in internetbanking** - this is your safety net.
+
+### Configure Tokens
+
+Run `/secretary-setup` to save your tokens, or manually create `~/.secretary/fio-tokens.json`:
+
+```json
+{
+  "business": {
+    "token": "your-64-char-token-here",
+    "accountNumber": "1234562010"
+  },
+  "personal": {
+    "token": "your-64-char-token-here",
+    "accountNumber": "7890122010"
+  }
+}
+```
+
+## Google Drive Setup
+
+Google Drive MCP is used to read email attachments (invoices, contracts) and search for documents.
+
+The `@anthropics/gdrive-mcp` server handles OAuth automatically on first use:
+1. On first access, you'll be redirected to Google OAuth in your browser
+2. Grant read access to Google Drive
+3. Tokens are stored automatically
+
+No manual configuration needed.
+
 ## Getting Help
 
 If you encounter issues:
