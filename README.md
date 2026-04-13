@@ -1,6 +1,6 @@
 # Personal Assistant Plugin for Claude Code
 
-Transform Claude Code into your intelligent personal assistant with seamless Gmail and Google Calendar integration. This plugin helps you manage emails, coordinate meetings, and stay organized throughout your day.
+Transform Claude Code into your intelligent personal assistant with seamless Gmail and Google Calendar integration. This plugin helps you manage emails, coordinate meetings, process payments, and stay organized throughout your day with virtual secretary capabilities.
 
 ## Features
 
@@ -15,6 +15,14 @@ Transform Claude Code into your intelligent personal assistant with seamless Gma
 - **Smart Scheduling**: Find optimal time slots for meetings and focus work
 - **Meeting Preparation**: Get context and prep materials for upcoming meetings
 - **Conflict Detection**: Automatically identifies scheduling conflicts
+
+### Virtual Secretary
+- **Inbox Triage**: Automatically classifies emails - deletes spam/commercial, archives informational
+- **Payment Processing**: Extracts invoice data, verifies vendors, submits payments via Fio API
+- **Vendor Trust**: Builds trust database from payment history - auto-pays trusted vendors under limit
+- **Smart Duplicate Detection**: Checks payment history and frequency to prevent double payments
+- **Pending Payments**: Queues payments when insufficient funds, retries on next run
+- **Dual Account Support**: Manages both business and personal Fio bank accounts
 
 ### Personal Assistant Commands
 
@@ -53,6 +61,20 @@ Find the perfect time for any task:
 - Respects your scheduling preferences
 - Avoids fragmentation
 
+#### `/secretary`
+Process your inbox like a virtual secretary:
+- Triage unread emails (delete spam, archive processed)
+- Extract and verify payment requests
+- Auto-pay trusted vendors under 5,000 CZK limit
+- Queue payments when funds are insufficient
+- Report summary with items needing your decision
+
+#### `/secretary-setup`
+First-time setup wizard:
+- Configure Fio bank API tokens
+- Set auto-pay limits
+- Initialize data files
+
 ## Quick Start
 
 1. **Install the plugin**:
@@ -79,6 +101,7 @@ See [SETUP.md](SETUP.md) for detailed installation and configuration instruction
 - Node.js and npm
 - Google account
 - Google Cloud Platform account (free tier)
+- Fio bank account(s) with API tokens
 
 ## MCP Servers
 
