@@ -12,6 +12,13 @@
         "-y",
         "@cocal/google-calendar-mcp"
       ]
+    },
+    "google-drive": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropics/gdrive-mcp"
+      ]
     }
   }
 }
