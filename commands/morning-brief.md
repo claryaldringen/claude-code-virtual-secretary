@@ -20,5 +20,13 @@ You are helping the user start their day. Please provide a comprehensive morning
    - Suggest optimal times for focused work based on calendar gaps
    - Highlight any meeting prep needed
    - Recommend email responses that should be prioritized
+5. **Secretary Status** (if `~/.secretary/config.json` exists):
+   - Check `~/.secretary/pending_payments.json` for queued payments and report count + total
+   - Suggest running `/secretary` if there are unread emails or pending payments
+   - Show current balances on Fio accounts if tokens are configured:
+     ```bash
+     curl -s "https://fioapi.fio.cz/v1/rest/last/{token}/transactions.json"
+     ```
+     Report closing balance for each account.
 
 Present this information in a clear, organized format that helps the user plan their day effectively.
