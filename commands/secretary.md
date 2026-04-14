@@ -64,25 +64,48 @@ Before touching emails, check if there are pending payments from previous runs:
 
 ## Phase 2: Triage inbox
 
-1. Search Gmail for unread emails:
-   Use Gmail MCP tool `gmail_search_messages` with query "is:unread" (or "in:inbox is:unread")
+1. Read the OAuth token from `~/.gmail-mcp/credentials.json` (field `access_token`)
 
-2. For each unread email, read its full content using `gmail_read_message`
+2. Search Gmail for unread emails using the API directly:
+   ```bash
+   curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+in:inbox&maxResults=500" \
+     -H "Authorization: Bearer {token}"
+   ```
+   Use `nextPageToken` for pagination if needed.
 
-3. Classify each email into one of these categories:
+3. For each email, fetch metadata (From, Subject):
+   ```bash
+   curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages/{id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject" \
+     -H "Authorization: Bearer {token}"
+   ```
+   For payment-related emails, fetch full content with `format=full`.
+
+4. Classify each email into one of these categories:
 
    **SPAM/COMMERCIAL** - Delete these immediately:
    - Newsletters, marketing emails, promotional offers
    - Automated notifications from services the user didn't explicitly interact with
    - Bulk commercial messages (obchodni sdeleni)
-   - Use Gmail MCP to move to trash
+   - Generic LinkedIn (job alerts, posts, invitations, impressions)
+   - Batch trash using:
+     ```bash
+     curl -s -X POST "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify" \
+       -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \
+       -d '{"ids":[...], "addLabelIds":["TRASH"], "removeLabelIds":["INBOX","UNREAD"]}'
+     ```
 
    **INFORMATIONAL** - Archive these:
    - Order confirmations, shipping notifications
    - Automated alerts, system notifications
    - FYI emails that don't require action
    - Read receipts, subscription confirmations
-   - Use Gmail MCP to archive (remove from inbox)
+   - Old deployment/CI notifications (Vercel, GitHub Actions etc.)
+   - Batch archive using:
+     ```bash
+     curl -s -X POST "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify" \
+       -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \
+       -d '{"ids":[...], "removeLabelIds":["INBOX","UNREAD"]}'
+     ```
 
    **PAYMENT_REQUEST** - Process in Phase 3:
    - Emails containing invoices, bills, payment requests
@@ -95,7 +118,10 @@ Before touching emails, check if there are pending payments from previous runs:
    - Emails the secretary is unsure how to classify
    - Anything sensitive or unusual
 
-4. Track counts for the summary: deleted, archived, payment_requests, needs_human
+5. **Efficiency**: Process emails in bulk by sender pattern first (e.g., all LinkedIn, all Slevomat),
+   then classify remaining individually. Use `batchModify` with up to 1000 IDs per call.
+
+6. Track counts for the summary: deleted, archived, payment_requests, needs_human
 
 ## Phase 3: Process payment requests
 
@@ -103,7 +129,11 @@ For each email classified as PAYMENT_REQUEST:
 
 1. **Extract payment details:**
    - Read the email body for: amount, account number, bank code, VS, KS, SS, due date, vendor name
-   - If the email has PDF attachments, use Google Drive MCP to access and read them
+   - If the email has PDF attachments, fetch them via Gmail API:
+     ```bash
+     curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages/{messageId}/attachments/{attachmentId}" \
+       -H "Authorization: Bearer {token}"
+     ```
    - Look for patterns like:
      - "castka: 4 200 Kc" or "amount: 4200 CZK"
      - "ucet: 2212-2000000699/2010" or bank account patterns (digits/digits)

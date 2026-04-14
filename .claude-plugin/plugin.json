@@ -10,6 +10,5 @@
     "gmail", "calendar", "assistant", "productivity",
     "secretary", "fio", "payments", "google-drive"
   ],
-  "hooks": "./hooks/hooks.json",
-  "mcpServers": "./.mcp.json"
+  "hooks": "./hooks/hooks.json"
 }
