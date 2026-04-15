@@ -77,18 +77,27 @@ First-time setup wizard:
 
 ## Quick Start
 
-1. **Install the plugin**:
+1. **Clone the plugin**:
    ```bash
-   claude plugin install https://github.com/kjenney/personal-assistant-plugin
+   git clone https://github.com/claryaldringen/claude-code-virtual-secretary.git
    ```
 
-2. **Set up Google Cloud credentials** (see [SETUP.md](SETUP.md))
+2. **Copy commands to your Claude Code config**:
+   ```bash
+   cp claude-code-virtual-secretary/commands/* ~/.claude/commands/
+   ```
 
-3. **Authenticate with Google** on first use
+3. **Set up Google Cloud credentials** (see [SETUP.md](SETUP.md))
 
-4. **Start using**:
+4. **Run the setup wizard**:
+   ```
+   /secretary-setup
+   ```
+
+5. **Start using**:
    ```
    /morning-brief
+   /secretary
    ```
 
 ## Setup
@@ -98,33 +107,41 @@ See [SETUP.md](SETUP.md) for detailed installation and configuration instruction
 ## Requirements
 
 - Claude Code
-- Node.js and npm
-- Google account
+- Google account with Gmail API access (OAuth2 credentials at `~/.gmail-mcp/`)
 - Google Cloud Platform account (free tier)
 - Fio bank account(s) with API tokens
 
-## MCP Servers
+### Optional
 
-This plugin uses two Model Context Protocol servers:
-- **Gmail MCP** (`@gongrzhe/server-gmail-autoauth-mcp`) - For email integration with automatic OAuth authentication
-- **Google Calendar MCP** (`@cocal/google-calendar-mcp`) - For calendar integration
+- **SweptMind** (GTD task manager) — if configured as an MCP server, `/morning-brief` will include task overview. Install via `claude mcp add --scope user sweptmind npx sweptmind-cli serve`
+- **Google Calendar MCP** — for calendar integration in `/morning-brief`
 
-Both servers are automatically configured and managed by the plugin.
+## Customizing the Persona
 
-## Privacy & Security
+By default, the secretary uses a neutral, professional tone. To customize:
 
-- OAuth 2.0 authentication with encrypted token storage
-- No data is stored or transmitted outside of Google and Claude
-- Minimal required permissions (read/modify emails, manage calendar)
-- All operations require explicit user consent
+Create `~/.secretary/persona.md` with your preferred personality:
+
+```markdown
+You are **Donna Claude**, virtual secretary of John Smith.
+Your personality is inspired by **Donna Paulsen from Suits**.
+You communicate in Czech, in the female gender.
+Sign emails formally as "Donna Claude, assistant to Mr. Smith".
+```
+
+The secretary will read this file on startup and adopt the persona described there.
 
 ## How It Works
 
-The Personal Assistant plugin combines:
-1. **MCP Servers**: Connect to Gmail and Google Calendar APIs
-2. **Slash Commands**: Provide structured workflows for common tasks
-3. **Hooks**: Add contextual awareness and automation
-4. **Claude's Intelligence**: Understand natural language and provide smart recommendations
+The plugin uses direct API calls (Gmail REST API, Fio API) rather than MCP servers for core functionality. This means fewer dependencies and simpler setup. MCP servers are optional for extended features like task management (SweptMind) and calendar (Google Calendar).
+
+## Privacy & Security
+
+- OAuth 2.0 authentication with token storage at `~/.gmail-mcp/`
+- No data is stored or transmitted outside of Google, Fio, and Claude
+- Minimal required permissions (read/modify emails, manage calendar)
+- All operations require explicit user consent
+- Sensitive files (tokens, credentials) are excluded via `.gitignore`
 
 ## Example Usage
 
