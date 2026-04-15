@@ -76,9 +76,9 @@ Before touching emails, check if there are pending payments from previous runs:
 
 1. Read the OAuth token from `~/.gmail-mcp/credentials.json` (field `access_token`)
 
-2. Search Gmail for unread emails using the API directly:
+2. Search Gmail for ALL emails in inbox (not just unread — the user may have read some but left them for the secretary to handle):
    ```bash
-   curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread+in:inbox&maxResults=500" \
+   curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=in:inbox&maxResults=500" \
      -H "Authorization: Bearer {token}"
    ```
    Use `nextPageToken` for pagination if needed.
