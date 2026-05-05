@@ -36,4 +36,6 @@ venv/
 .claude/local/
 CLAUDE.md
 marketplace.json
+# …but DO commit our own plugin marketplace manifest
+!.claude-plugin/marketplace.json
 

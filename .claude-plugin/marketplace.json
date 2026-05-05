@@ -1,0 +1,34 @@
+{
+  "name": "virtual-secretary-marketplace",
+  "metadata": {
+    "description": "Virtual secretary for Claude Code — Gmail triage, Fio bank payments, Datová schránka monitoring, Slack micropayments, Google Drive archive."
+  },
+  "owner": {
+    "name": "Martin Zadražil"
+  },
+  "plugins": [
+    {
+      "name": "virtual-secretary",
+      "description": "Automated email triage, Fio bank payments, Datová schránka monitoring, Slack micropayments, and Google Drive integration. Configurable Gmail mode (MCP connector or direct API), optional ISDS and Slack integrations.",
+      "author": {
+        "name": "Martin Zadražil"
+      },
+      "category": "productivity",
+      "keywords": [
+        "gmail",
+        "calendar",
+        "assistant",
+        "productivity",
+        "secretary",
+        "fio",
+        "payments",
+        "google-drive",
+        "isds",
+        "datova-schranka",
+        "slack"
+      ],
+      "source": "./",
+      "homepage": "https://github.com/claryaldringen/claude-code-virtual-secretary"
+    }
+  ]
+}

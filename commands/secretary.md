@@ -18,12 +18,18 @@ Process the user's inbox methodically, handle payments, and report a summary. Fo
 ## Pre-flight checks
 
 Before starting, verify:
-1. Read `~/.secretary/config.json` to get settings (autoPayLimit, defaultAccount)
+1. Read `~/.secretary/config.json` to get settings (`gmailMode`, `autoPayLimit`, `defaultAccount`)
 2. Read `~/.secretary/fio-tokens.json` to verify Fio tokens are configured
 3. Read `~/.secretary/trusted_vendors.json` to load vendor database
 4. Read `~/.secretary/pending_payments.json` to check for queued payments
 
 If any file is missing, tell the user to run `/secretary-setup` first and stop.
+
+**Gmail mode dispatch.** Treat `gmailMode` value of `api` (or absent — backwards compatibility) as **API mode** and `mcp` as **MCP mode**. Throughout Phase 2/3/5 below, operations are written with two variants — perform the one that matches the configured mode. Key behavioural differences in MCP mode:
+- Replies become **drafts** (Gmail MCP exposes only `create_draft`, not `send_message`). Surface every draft to the user and ask them to send it manually.
+- Bulk triage is per-thread (no `batchModify`) — slower; prefer threads to messages and consider higher-confidence triage to limit the count.
+- PDF attachments **cannot be downloaded** — for invoice parsing, ask the user for the missing fields rather than guessing.
+- Trashing may be limited to label-only operations; if the connector refuses `TRASH` as a label, fall back to archiving and surface the email for the user.
 
 ## Phase 1: Process pending payments first
 
@@ -74,35 +80,31 @@ Before touching emails, check if there are pending payments from previous runs:
 
 ## Phase 2: Triage inbox
 
-1. Read the OAuth token from `~/.gmail-mcp/credentials.json` (field `access_token`)
+### 1. Authenticate Gmail
 
-2. Search Gmail for ALL emails in inbox (not just unread — the user may have read some but left them for the secretary to handle):
-   ```bash
-   curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=in:inbox&maxResults=500" \
-     -H "Authorization: Bearer {token}"
-   ```
-   Use `nextPageToken` for pagination if needed.
+- **API mode**: Read OAuth token from `~/.gmail-mcp/credentials.json` (field `access_token`). If `expiry_date` is past or absent, refresh by POSTing to `https://oauth2.googleapis.com/token` with `client_id`/`client_secret` from `~/.gmail-mcp/gcp-oauth.keys.json`, `refresh_token` from credentials, and `grant_type=refresh_token`. Save the new `access_token` and updated `expiry_date` back to the credentials file.
+- **MCP mode**: No token to manage — the Gmail MCP connector handles authentication. Verify connectivity by calling `mcp__claude_ai_Gmail__list_labels` once. If the call errors, ask the user to reconnect Gmail in their client's connectors panel and stop.
 
-3. For each email, fetch metadata (From, Subject):
-   ```bash
-   curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages/{id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject" \
-     -H "Authorization: Bearer {token}"
-   ```
-   For payment-related emails, fetch full content with `format=full`.
+### 2. List inbox
 
-4. Classify each email into one of these categories:
+- **API mode**: GET `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=in:inbox&maxResults=500` with `Authorization: Bearer {token}`. Paginate via `nextPageToken`. Result is a list of message IDs.
+- **MCP mode**: Call `mcp__claude_ai_Gmail__search_threads` with `query="in:inbox"`. Result is a list of threads. For inbox triage, treat one thread as one item (most inbox conversations are single-message anyway).
+
+### 3. Fetch metadata + body
+
+- **API mode**: For each ID, GET `https://gmail.googleapis.com/gmail/v1/users/me/messages/{id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date` for triage. For emails likely to be payments, fetch with `format=full` and base64url-decode `payload.body.data` and walk nested `parts` to extract `text/plain` and `text/html`.
+- **MCP mode**: Call `mcp__claude_ai_Gmail__get_thread` with the thread ID. The response contains messages with their headers and bodies. The structure may be flatter than the raw Gmail API — adapt parsing.
+
+### 4. Classify each email into one of these categories
 
    **SPAM/COMMERCIAL** - Delete these immediately:
    - Newsletters, marketing emails, promotional offers
    - Automated notifications from services the user didn't explicitly interact with
    - Bulk commercial messages (obchodni sdeleni)
    - Generic LinkedIn (job alerts, posts, invitations, impressions)
-   - Batch trash using:
-     ```bash
-     curl -s -X POST "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify" \
-       -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \
-       -d '{"ids":[...], "addLabelIds":["TRASH"], "removeLabelIds":["INBOX","UNREAD"]}'
-     ```
+   - Trash:
+     - **API mode**: One bulk POST `https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify` with `{"ids":[...], "addLabelIds":["TRASH"], "removeLabelIds":["INBOX","UNREAD"]}` (up to 1000 ids per call).
+     - **MCP mode**: Per thread, call `mcp__claude_ai_Gmail__label_thread` with the system label `TRASH`, then `mcp__claude_ai_Gmail__unlabel_thread` to remove `INBOX`/`UNREAD`. If labelling `TRASH` is rejected by the connector, fall back to archive (just remove `INBOX`) and add the email to the summary as "needs manual delete". Be more conservative in MCP mode — only obvious newsletters, since each thread is multiple round-trips.
 
    **INFORMATIONAL** - Archive these:
    - Order confirmations, shipping notifications
@@ -110,12 +112,9 @@ Before touching emails, check if there are pending payments from previous runs:
    - FYI emails that don't require action
    - Read receipts, subscription confirmations
    - Old deployment/CI notifications (Vercel, GitHub Actions etc.)
-   - Batch archive using:
-     ```bash
-     curl -s -X POST "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify" \
-       -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \
-       -d '{"ids":[...], "removeLabelIds":["INBOX","UNREAD"]}'
-     ```
+   - Archive:
+     - **API mode**: Bulk POST `batchModify` with `{"ids":[...], "removeLabelIds":["INBOX","UNREAD"]}`.
+     - **MCP mode**: Per thread, call `mcp__claude_ai_Gmail__unlabel_thread` with `INBOX` and `UNREAD`.
 
    **PAYMENT_REQUEST** - Process in Phase 3:
    - Emails containing invoices, bills, payment requests
@@ -128,10 +127,64 @@ Before touching emails, check if there are pending payments from previous runs:
    - Emails the secretary is unsure how to classify
    - Anything sensitive or unusual
 
-5. **Efficiency**: Process emails in bulk by sender pattern first (e.g., all LinkedIn, all Slevomat),
-   then classify remaining individually. Use `batchModify` with up to 1000 IDs per call.
+### 5. Efficiency
 
-6. Track counts for the summary: deleted, archived, payment_requests, needs_human
+Process emails in bulk by sender pattern first (e.g., all LinkedIn, all Slevomat), then classify remaining individually. In API mode, use `batchModify` with up to 1000 IDs per call. In MCP mode, parallelise where possible but expect each triage round to be slower.
+
+### 6. Counts
+
+Track counts for the summary: deleted, archived, payment_requests, needs_human. In MCP mode, also track `manual_delete_needed` (when TRASH labelling failed) and `drafts_pending` (replies awaiting user send).
+
+## Phase 2.7: Check Datové schránky (ISDS)
+
+**Skip this phase if `~/.secretary/isds-credentials.json` does not exist OR `dsAutoCheck` in `~/.secretary/config.json` evaluates to skip.** The `dsAutoCheck` value can be:
+- `false` (or absent) — always skip
+- `"monday"` — skip unless today is Monday (per the user's local timezone)
+- `"always"` — never skip
+
+If skipping, do not call any ISDS endpoint. If the user explicitly asked for a DS check this run (e.g. "check datovku"), override the schedule and run the phase regardless.
+
+This phase monitors the user's Czech official mailboxes (Datová schránka), archives every new message to Google Drive, and surfaces novelties in the summary. ISDS messages are legally delivered after **10 days regardless of read state** (`fikce doručení`), so missing one has real consequences.
+
+1. **Load creds:** Read `~/.secretary/isds-credentials.json`. Each top-level key (other than `endpoint`/`operations_endpoint`) is a box config with `username`, `password`, `label`, optional `dsId`.
+
+2. **Load state:** Read `~/.secretary/isds_state.json` (create as `{}` if missing). For each configured box, this file may store `last_checked_dmAcceptanceTime` — only fetch messages newer than that.
+
+3. **Authenticate carefully.** ISDS locks an account after **5 failed logins** and forces a password reset. If the first SOAP call returns 401/Unauthorized, **stop immediately** for that box and surface the error to the user — never retry on auth failure.
+
+4. **For each box, list new received messages.** SOAP POST to `<endpoint>DS/dx` with HTTP Basic Auth (`username`:`password`). Method `GetListOfReceivedMessages`. Body skeleton:
+   ```xml
+   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                     xmlns:v20="http://isds.czechpoint.cz/v20">
+     <soapenv:Body>
+       <v20:GetListOfReceivedMessages>
+         <v20:dmFromTime>{ISO timestamp = last_checked or 30 days ago}</v20:dmFromTime>
+         <v20:dmToTime/>
+         <v20:dmOrganizationUnitName/>
+         <v20:dmStatusFilter>-1</v20:dmStatusFilter>
+         <v20:dmOffset>1</v20:dmOffset>
+         <v20:dmLimit>200</v20:dmLimit>
+       </v20:GetListOfReceivedMessages>
+     </soapenv:Body>
+   </soapenv:Envelope>
+   ```
+   Response contains zero or more `<dmRecord>` elements. Each carries `dmID`, `dmAnnotation` (subject), `dmSender`, `dmAcceptanceTime` (delivery to box), `dmDeliveryTime` (read time), and attachment metadata.
+
+5. **Filter against Google Drive archive.** For each `dmID`, check whether `/Datová schránka/{label}/Příchozí/{YYYY-MM}/{dmID}/` already exists on Drive (the user's convention — `dmID` as folder = already processed). If it exists, the message is already archived → skip.
+
+6. **For each new (unarchived) message:**
+   a. Download the full message via SOAP method `MessageDownload` to `<endpoint>DS/dz`. Response contains a base64-encoded `dmEncodedContent` (the .zfo file with envelope) plus `dmFiles` (each attachment base64-encoded).
+   b. Save the .zfo locally to `/tmp/ds_{dmID}.zfo` and each attachment to `/tmp/ds_{dmID}_{filename}`.
+   c. Upload all of these to Google Drive at `/Datová schránka/{label}/Příchozí/{YYYY-MM}/{dmID}/` (create folders as needed).
+   d. Record in the summary under "Nové zprávy v Datové schránce": `{label} — od {dmSender}, předmět: {dmAnnotation}, dmID {dmID}, doručeno {dmAcceptanceTime}`. If the message looks like a legal deadline (parking, fines, official notices), flag it explicitly with a recommended response date.
+
+7. **Update state.** After processing the box, set `isds_state.json[box].last_checked_dmAcceptanceTime` to the latest seen `dmAcceptanceTime`. Save.
+
+8. **Track counts** for the summary: `ds_new`, `ds_archived`, `ds_skipped_already_archived`, `ds_auth_failures`.
+
+**Security note:** ISDS credentials are full account access. Never log them, never echo them in output, never send them to external services. The `chmod 600` on `~/.secretary/isds-credentials.json` should already be in place from `/secretary-setup`.
+
+**Idempotence:** Re-running this phase must be safe — the GDrive folder check guarantees that already-archived messages are not re-downloaded or re-reported.
 
 ## Phase 3: Process payment requests
 
@@ -139,11 +192,9 @@ For each email classified as PAYMENT_REQUEST:
 
 1. **Extract payment details:**
    - Read the email body for: amount, account number, bank code, VS, KS, SS, due date, vendor name
-   - If the email has PDF attachments, fetch them via Gmail API:
-     ```bash
-     curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages/{messageId}/attachments/{attachmentId}" \
-       -H "Authorization: Bearer {token}"
-     ```
+   - If the email has PDF attachments:
+     - **API mode**: Fetch via `curl -s "https://gmail.googleapis.com/gmail/v1/users/me/messages/{messageId}/attachments/{attachmentId}" -H "Authorization: Bearer {token}"`, base64url-decode the `data` field, save to `/tmp/`, and parse with `pdftotext` (use `-upw <password>` if heslem-protected — typical passwords: insurer's `DDMMRRRR`, Generali's full birth number).
+     - **MCP mode**: Attachments are not exposed by the Gmail MCP. Skip automatic PDF parsing and add to "Vyžaduje rozhodnutí": "PDF příloha {filename}, MCP režim ji neumí stáhnout — doplň prosím částku, účet, VS, splatnost." If the email body itself contains all payment fields, proceed with those.
    - Look for patterns like:
      - "castka: 4 200 Kc" or "amount: 4200 CZK"
      - "ucet: 2212-2000000699/2010" or bank account patterns (digits/digits)
@@ -212,6 +263,11 @@ Present a clear summary to the user:
   - {vendor2} - {amount2} CZK z {account} (VS: {vs})
 - Ceka na SMS potvrzeni v internetbankingu: {count} plateb
 
+### Datová schránka (pokud dsAutoCheck zapnuto)
+- Nové zprávy archivované na GDrive: {count}
+  - {label}: od {sender}, předmět {subject}, dmID {dmID} ({deadline note ak je})
+- Přeskočeno (už archivováno): {count}
+
 ### Odlozene platby (nedostatek prostredku)
 - {vendor} - {amount} CZK, splatnost {dueDate}
 
@@ -247,3 +303,10 @@ After presenting the summary, wait for user input on items requiring decisions:
 - **Any other questions**: Respond based on user instructions
 
 After processing user decisions, save all updated JSON files.
+
+## Sending replies (any phase)
+
+When you write a reply on the user's behalf:
+
+- **API mode**: Build a MIME message (UTF-8 plain text), set `From`, `To`, `Subject` (prefix `Re:` if missing), and reply headers `In-Reply-To` + `References` from the original message's `Message-Id`/`References`. Encode as base64url and POST to `https://gmail.googleapis.com/gmail/v1/users/me/messages/send` with `{"raw": "<base64>", "threadId": "<original threadId>"}`. The reply is delivered immediately.
+- **MCP mode**: Call `mcp__claude_ai_Gmail__create_draft` with the reply text and recipient. **The draft is NOT sent automatically.** Surface this to the user: "Připravený draft v Gmail Drafts: {subject}. Otevři Drafts a odešli ručně." Track every such draft in the summary under a "Drafty čekající na odeslání" section so the user knows what they have to send.
